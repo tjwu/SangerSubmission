@@ -1,4 +1,5 @@
-# This script runs codify command to generate codify file.
+# Christie's request or from DM directly.
+# This script runs on manually generated list which looks like codified list. 
 # Then, read through it and got into each sample's directory to get neptune vcf.
 # Finally, output each batch's vcf which includes some more info to /hgsccl/SangerSubmission.
 # Divya's script is able to read this directory and get vcf for later sanger checking.
@@ -114,7 +115,8 @@ def RunCodexCMD():
     codexFileName =  "%s/Codex_Report_Out_%s.tsv" % (All_Files, dateString)
     CMD = python + " " + Codex + " > " + codexFileName
     print CMD                                                                                 
-    #os.system(CMD)                                                                            
+    #os.system(CMD)
+    codexFileName = "/hgsccl_software/devel/TJ/SangerSubmission/FakeCodexFile.tsv" 
     return codexFileName
 
 # Add them all into a list. Later, read through it and get samples which needs sanger sequencing. 
