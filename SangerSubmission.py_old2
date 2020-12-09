@@ -1,9 +1,5 @@
-# This script runs codify command to generate codify file.
-# Then, read through it and got into each sample's directory to get neptune vcf.
-# Finally, output each batch's vcf which includes some more info to /hgsccl/SangerSubmission.
-# Divya's script is able to read this directory and get vcf for later sanger checking.
-# python SangerSubmission.py
 # By Tsung-Jung Wu
+# python Sanger_temp.py 170105_D00341_0512_AH7LYGBCXY
 
 import sys
 import os
@@ -33,7 +29,7 @@ python="/hgsccl/codified/bin/python2.7"
 Codex="/hgsccl/codified/bin/exportCodex.manual"
 FC_Need_Logging=[]
 RefLine="#Reference=/stornext/snfs0/hgsc-refs/Illumina/bwa_references/h/hg19/original/hg19.fa"
-All_Files = "/hgsccl/SangerSubmission_allfiles/"
+
 
 def Read_FC_database():
     # Get FCs which have done Mercury analysis
@@ -64,7 +60,10 @@ def Get_New_FC():
         Sanger_FC_done_list.append(FC)
 
     #NewFC = list(set(DB_done_list) - set(Sanger_FC_done_list))
-    NewFC = DB_done_list
+    NewFC=DB_done_list
+    #NewFC.remove("160328_D00341_0445_AHHNT5BCXX")
+    #NewFC.remove("160330_D00222_0435_BHHGWFBCXX")
+    #NewFC.remove("160403_D00222_0436_AHMF2CBCXX")
     return NewFC
 
 # Run throug new FCs and get FCD info. This step gets BatchID and Lablist.
@@ -109,31 +108,27 @@ def Read_FCDef_Get_Lab(FC):
             Lablist.append(Lab)
     return [BatchID,Lablist]
 
-# Codex command modify to output all samples need to report at once. Modify function to handle this change. # Apr 5 2018
-def RunCodexCMD():
-    codexFileName =  "%s/Codex_Report_Out_%s.tsv" % (All_Files, dateString)
-    CMD = python + " " + Codex + " > " + codexFileName
-    print CMD                                                                                 
-    #os.system(CMD)                                                                            
-    return codexFileName
-
+# Each lab should generate a tsv file in codexExport directory. 
 # Add them all into a list. Later, read through it and get samples which needs sanger sequencing. 
 def Get_new_codex_files(FC, BatchID, Lablist):
     NewFilelist=[]
-
     #print FC, BatchID, Lablist
     for site in Lablist:
-        #codexFileName = "/hgsccl/codified/codexExport/%s-%s.%s.tsv" % (BatchID, site, dateString)
-        #In = BatchID + "-" + site
-        #CMD = python + " " + Codex + " " + In
-        #print CMD
-        #os.system(CMD)
-        #NewFilelist.append(codexFileName)
+        codexFileName = "/hgsccl/codified/codexExport/%s-%s.%s.tsv" % (BatchID, site, dateString)
+        #codexFileName = "/hgsccl/codified/webreports/%s-%s.%s.tsv" % (BatchID, site, dateString)
+        In = BatchID + "-" + site
+        CMD = python + " " + Codex + " " + In
+        print CMD
+        os.system(CMD)
+        NewFilelist.append(codexFileName)
 
         Current_FC_Lab = FC+"_"+site
+        #print Current_FC_Lab
         SangerFClist=[ FC, BatchID, dateString, site ]
-
         # Add FC and sampling lab to database. 
+        # CREATE TABLE Sanger_FC(id INTEGER PRIMARY KEY, flowcellName TEXT, BatchID TEXT, Finish_Time BLOB, SamplingLab TEXT);
+
+        #SangerDB="/hgsccl_software/prod/SangerSubmission_allfiles/SangerRecord_db"
         SangerDB="/hgsccl/databases/SangerRecord_db"
         Sanger_FC_Lab_list = []
         sangerdb = sqlite3.connect(SangerDB)
@@ -146,33 +141,8 @@ def Get_new_codex_files(FC, BatchID, Lablist):
 
         if Current_FC_Lab not in Sanger_FC_Lab_list:
             sangerfccursor.execute('''INSERT INTO Sanger_FC( flowcellName, BatchID, Finish_Time, SamplingLab ) VALUES(?,?,?,?) ''', (SangerFClist))
-            #sangerdb.commit()
+            sangerdb.commit()
     return NewFilelist
-
-def Get_new_vip_files(BatchID, Lablist, BAR):
-    NewVIPlist = []
-    FC_Dir = glob.glob("%s/*/*%s/Results/Project_*%s/" %  (INSTRUMENT_DIR, BAR, BAR))[0]
-    try:
-        FC_Dir_Vip = max(glob.glob("%s/*/*%s/Results/Project_*%s/%s*.vip.txt" %  (INSTRUMENT_DIR, BAR, BAR, BatchID)), key=os.path.getctime)
-        NewVIPlist.append(FC_Dir_Vip)
-    except ValueError:
-        resultsDir = "/hgsccl/SangerSubmission_allfiles/"
-        for site in Lablist:
-            vipFileName = "%s/%s.%s.vip.txt" % (resultsDir, BatchID, dateString)
-            CMD = "/hgsccl/codified/bin/vips \"%s-%s\" > %s" % (BatchID, site, vipFileName)
-            #os.system(CMD)
-            NewVIPlist.append(vipFileName)
-            shutil.copy2(vipFileName, FC_Dir)
-    return NewVIPlist
-
-def Get_VIP():
-    NewVIPlist = []
-    resultsDir = "/hgsccl/SangerSubmission_allfiles/"
-    vipFileName = "%s/All-%s-vip.txt" % (resultsDir, dateString)
-    CMD = "/hgsccl/codified/bin/vips > %s" % vipFileName
-    #os.system(CMD)
-    NewVIPlist.append(vipFileName) 
-    return NewVIPlist
 
 # Reading through each codexgenerated file. 
 # Get those samples and positions which need sanger sequencing. Put them all into one csv file. Mail this file to receivers.  
@@ -190,10 +160,8 @@ def Get_sample_need_sanger(FC, BatchID, NewFilelist):
                 continue
             elif len(k) < 9: # Add here to avoid unexpected line show up.
                 continue
-            elif k[0].find(BatchID) < 0:
-                continue
             else:
-                if k[6] == "yes" and k[8] == "no":
+                if k[6] == "yes":
                     n+=1
                     Sanger_File_Name = "/hgsccl/SangerSubmission_allfiles/Sanger_Sequencing_%s_%s_%s.csv" % (FC, BatchID, dateString)
                     Wsanger=csv.writer(open(Sanger_File_Name,"a"), delimiter= ",", lineterminator="\n")
@@ -201,6 +169,10 @@ def Get_sample_need_sanger(FC, BatchID, NewFilelist):
                         Wsanger.writerow(Title)
                     Wsanger.writerow(k)
                     # Add samples which need sanger into a list for later use. Commnad it out since Diviya wants to get new ones only. TJ Sep 21 2017.
+                    #SampleVariantlist.append(k[0:3]+[k[5]])
+                    #CREATE TABLE Sanger_Samples(id INTEGER PRIMARY KEY, FCLBC TEXT, Codex_SampleID TEXT,Chr INTEGER, Pos INTEGER, Ref TEXT, Var TEXT, Zygosity TEXT, Report TEXT, Comment TEXT)
+                    #Sample,chr pos ref var zygosity    report  confirmedWithSanger confirmedWithoutSanger  comment
+                    #IR038-Columbia-1-IDMB52 13  48947542    A   T   Heterozygous    no  no  no
                     #Sanger_File_List.append(Sanger_File_Name)
                     Lane, IDMB = k[0].split('-')[-2:]
                     FCLBC = '-'.join([BAR, Lane, IDMB])
@@ -221,9 +193,9 @@ def Get_sample_need_sanger(FC, BatchID, NewFilelist):
                     # Whatever not in database, treat it as new and put into list for later use. 
                     if DB_key not in Sanger_Samples_list:
                         sangercursor.execute('''INSERT INTO Sanger_Samples(FCLBC, Codex_SampleID, Chr, Pos, Ref, Var, Zygosity, Report, Date_Time ) VALUES(?,?,?,?,?,?,?,?,?) ''', (insert_Sample_list))
-                        #sangerdb.commit()
+                        sangerdb.commit()
                         # Including Zygosity here since later output needs this value
-                        SampleVariantlist.append(k[0:6])
+                        SampleVariantlist.append(k[0:3]+[k[5]])
                         if FC in FC_Need_Logging:
                             continue
                         else:
@@ -237,61 +209,22 @@ def Get_sample_need_sanger(FC, BatchID, NewFilelist):
 # Will add to here. 
 # Coming soon when I have time.
 
-def Check_missing(InRow):
-    MissingValue = 0
-    MissingList = []
-    Terms = ["Gene=", "Transcript_Used=", "Location=", "Nucleotide_corrected=", "AminoAcid="]
-    for t in Terms:
-        if InRow[7].find(t)<0:
-            InRow[7] = InRow[7] + ( ";%s" % t)
-            MissingList.append(t)
-    return InRow        
-
 def FindAndWrite(m, externalID, LaneBarcode, BATCH, Lab, zygosity, WriteVCF):
-    m = Check_missing(m)
+    if m[7].find("Location")<0:
+        m[7] = m[7].replace("Nucleotide_corrected","Location=Exon N/A;Nucleotide_corrected")
+    #1/0:67:189:256:.
     VR, RR, DP = m[9].split(":")[1:4]
     VRDP_ratio = round(float(VR)/float(DP), 2)
-    if VRDP_ratio < 0.3: # When allele frequency is below 0.3, put in "Possible Mosaic" for the zygosity. Eric and Yunyun's email.
+    if VRDP_ratio < 0.3: # Oh, that is a great idea. So if the allele fraction is below 0.3 we put in "Possible Mosaic" for the zygosity? Eric and Yunyun agree.
         zygosity = "Possible Mosaic"
     newINFO = m[7]+";externalID(INDIVIDUAL_ID)=%s;LaneBarcode=%s;Batch-Lab=%s;Zygosity=%s" % (externalID,LaneBarcode,BATCH+"-"+Lab, zygosity)
     m[7]= newINFO
+    #if Extra == "yes":
+    #    WriteVCF.writerow([RefLine])
     WriteVCF.writerow(m)
 
-def RescueAndWrite(row, externalID, LaneBarcode, BATCH, Lab, zygosity, ReadDepth, SampleName, WriteVCF):
-    row = row[:-2] + ReadDepth
-    row = Check_missing(row)
-    GOF, GQ = row[9].split(":")[2:4]
-    VRDP_ratio = round(float(GOF)/float(GQ), 2)
-    if VRDP_ratio < 0.3:
-        zygosity = "Possible Mosaic"
-    newINFO = row[7]+";sampleID=%s;externalID(INDIVIDUAL_ID)=%s;LaneBarcode=%s;Batch-Lab=%s;Zygosity=%s" % (SampleName, externalID, LaneBarcode, BATCH+"-"+Lab, zygosity)
-    row[7]= newINFO
-    WriteVCF.writerow(row)
-
-def ReadSampleVCF(BAR, Lane, IDMB, chr, pos, INSTRUMENT_DIR):
-    SampleVCFList = glob.glob("%s/*/*%s/Results/Project_*%s/Sample_%s-%s-%s/*/*s.vcf" %  (INSTRUMENT_DIR, BAR, BAR, BAR, Lane, IDMB))
-    for vcf in SampleVCFList:
-        Rvcf = csv.reader(open(vcf, "r"), delimiter= "\t")
-        for RV in Rvcf:
-            if RV[0] == chr and RV[1] == pos:
-                Def, Val = RV[8:]
-                ReadDepth = [Def, Val]
-    if not ReadDepth:
-        print "Create empty list for later FCs can run"
-        ReadDepth = []
-    return ReadDepth
-
-def GetSampleName (BAR, Lane, IDMB, INSTRUMENT_DIR):
-    BWAConfig = glob.glob("%s/*/*%s/Results/Project_*%s/Sample_%s-%s-%s/BWAConfigParams.txt" %  (INSTRUMENT_DIR, BAR, BAR, BAR, Lane, IDMB))[0]
-    ReadBWA = csv.reader(open(BWAConfig, "r"), delimiter="\t")
-    #ReadBWA = open(BWAConfig, "r")
-    for i in ReadBWA:
-        if i[0].find("SAMPLE_NAME") >=0:
-            SampleName = i[0][12:].strip()
-    #print SampleName
-    return SampleName
-
 def InsertRefLine(OutputVCF, HeaderList):
+    #RefLine = "#Reference=/stornext/snfs0/hgsc-refs/Illumina/bwa_references/h/hg19/original/hg19.fa" + "\r\n"
     f = open(OutputVCF, "r")
     contents = f.readlines()
     f.close()
@@ -303,11 +236,14 @@ def InsertRefLine(OutputVCF, HeaderList):
     f.write(newfile)
     f.close()
 
-def Get_Neptune_vcf(FC, SampleVariantlist, NewVIPlist):
-    print FC
+def Get_Neptune_vcf(FC, SampleVariantlist):
     BAR = FC[20:]
     Count=0
+    ref_count=0
     HeaderList=[]
+    #Vcf_Missing_Count=0
+    #Vcf_Missing_FileName="/hgsccl/SangerSubmission_allfiles/VCF_missing_Variant_list_%s.csv" % dateString
+    #Vcf_Missing_File=csv.writer(open((Vcf_Missing_FileName), "a"), delimiter=',', lineterminator='\n')
     for l in SampleVariantlist:
         Count+=1
         if len(l[0].split("-")) > 4:
@@ -320,8 +256,10 @@ def Get_Neptune_vcf(FC, SampleVariantlist, NewVIPlist):
             BATCH, Lab, Lane, IDMB = l[0].split("-")
 
         VCF_for_Write = ("/hgsccl/SangerSubmission_allfiles/Sanger_Sequencing_%s_%s_%s.vcf" % (FC,BATCH,dateString))
+
         WriteVCF = csv.writer(open(VCF_for_Write , "a"), delimiter="\t")
-        chr, pos, ref, var, zygosity = l[1:]
+
+        chr, pos, zygosity = l[1:]
         try:
             SampleBWA = glob.glob(INSTRUMENT_DIR + "*/*%s/Results/Project_*%s/Sample_*-%s-%s/BWA*" % (FC,FC,Lane,IDMB))[0]
         except:
@@ -336,11 +274,8 @@ def Get_Neptune_vcf(FC, SampleVariantlist, NewVIPlist):
             print "Assume sample is still gneratingvcf"
             continue
         ReadVCF = csv.reader(open(SampleNeptuneVCF,"r"),delimiter="\t")
-        VCFline = 0
-        VCFcontent = 0
-        DoneFinding = 0
+        VCFline=0
         for m in ReadVCF:
-            VCFcontent += 1
             VCFline += 1
             if m[0].find("#") >= 0:
                 if len(HeaderList) < 3 and VCFline < 3:
@@ -351,30 +286,64 @@ def Get_Neptune_vcf(FC, SampleVariantlist, NewVIPlist):
                     HeaderList.append(newm +"\r\n")
                     HeaderList.append(RefLine + "\r\n")
             else:
-                #if m[0] == chr and m[1] == pos and m[3] == ref and m[4] == var:
-                if m[0] == chr and m[1] == pos and m[3] ==ref and m[4] ==var:
+                if m[0] == chr and m[1] == pos:
                     FindAndWrite(m, externalID, LaneBarcode, BATCH, Lab, zygosity, WriteVCF)
-                    DoneFinding += 1
-        #if VCFcontent <= 3 or missingCount >0:
-        if  DoneFinding == 0:
-            FCLBC = "%s-%s-%s" % (BAR, Lane, IDMB)
-            #print "%s neptune VCF in %s %s use VIP DB annotation" % (FCLBC, BATCH, Lab)
-            
-            ReadDepth = ReadSampleVCF(BAR, Lane, IDMB, chr, pos, INSTRUMENT_DIR)
-            SampleName = GetSampleName (BAR, Lane, IDMB, INSTRUMENT_DIR)
-
-            for vl in NewVIPlist:
-                ReadVL = csv.reader(open(vl, "r"), delimiter = "\t")
-                for v in ReadVL:
-                    #if v[0] == chr and v[1] == pos and m[3] == ref and m[4] == var:
-                    if v[0] == chr and v[1] == pos and v[3] == ref and v[4] == var:
-                        #print v[0:5], "second"
-                        RescueAndWrite(v, externalID, LaneBarcode, BATCH, Lab, zygosity, ReadDepth, SampleName, WriteVCF)
     try:
         InsertRefLine(VCF_for_Write, HeaderList)
     except UnboundLocalError:
         pass
 
+
+
+
+#################################################################
+#        for m in ReadVCF:
+#            VCFline+=1
+#            if Count == 1:
+#                if m[0].find("#") >=0:
+#                    if VCFline == 3:
+#                        m[9] = ""
+#                    WriteVCF.writerow(m)
+#                else:
+#                    if ref_count == 0:
+#                        ref_count+=1
+#                        if m[0] == chr and m[1] == pos:
+#                            FindAndWrite(m, externalID, LaneBarcode, BATCH, Lab, zygosity, WriteVCF, "yes")
+#                            #if m[7].find("Location")<0:
+#                            #    m[7] = m[7].replace("Nucleotide_corrected","Location=Exon N/A;Nucleotide_corrected")
+#                            #newINFO = m[7]+";externalID(INDIVIDUAL_ID)=%s;LaneBarcode=%s;Batch-Lab=%s;Zygosity=%s" % (externalID,LaneBarcode,BATCH+"-"+Lab, zygosity)
+#                            #m[7]= newINFO
+#                            #WriteVCF.writerow([RefLine])
+#                            #WriteVCF.writerow(m)
+#                        else:
+#                            WriteVCF.writerow([RefLine])
+#                    else:
+#                        if m[0] == chr and m[1] == pos:
+#                            FindAndWrite(m, externalID, LaneBarcode, BATCH, Lab, zygosity, WriteVCF, "no")
+#                            #if m[7].find("Location")<0:
+#                            #    m[7] = m[7].replace("Nucleotide_corrected","Location=Exon N/A;Nucleotide_corrected")
+#                            #newINFO = m[7]+";externalID(INDIVIDUAL_ID)=%s;LaneBarcode=%s;Batch-Lab=%s;Zygosity=%s" % (externalID,LaneBarcode,BATCH+"-"+Lab, zygosity)
+#                            #m[7]= newINFO
+#                            #WriteVCF.writerow(m)
+#            else:
+#                if m[0]==chr and m[1]==pos:
+#                    FindAndWrite(m, externalID, LaneBarcode, BATCH, Lab, zygosity, WriteVCF, "no")
+#                    #if m[7].find("Location")<0:
+#                    #    m[7] = m[7].replace("Nucleotide_corrected","Location=Exon N/A;Nucleotide_corrected")
+#                    #newINFO = m[7]+";externalID(INDIVIDUAL_ID)=%s;LaneBarcode=%s;Batch-Lab=%s;Zygosity=%s" % (externalID,LaneBarcode,BATCH+"-"+Lab, zygosity)
+#                    #m[7]= newINFO
+#                    #WriteVCF.writerow(m)
+#    # If
+#    if ref_count ==0:
+#        ref_count+=1
+#        try:
+#            WriteVCF.writerow([RefLine])
+#        except UnboundLocalError:
+#            pass
+#    #if Vcf_Missing_Count > 0:
+#    #    mailString='mailx -a %s -s mailing_file_%s tsungjuw@bcm.edu  <<-EOF' % (Sanger_File_Name, BatchID)
+#        #os.system(mailString)
+#################################################################
 IGNFC=open("/hgsccl/SangerSubmission_allfiles/IgnoreFC.txt","r")
 Exceptionlist=[]
 for i in IGNFC.readlines():
@@ -418,20 +387,24 @@ def Archive_prior_file(Target_dir, Target_format):
         else:
             shutil.move(file, dest_dir)
         
-#Archive_prior_file("/hgsccl/codified/codexExport/","*.tsv")
+Archive_prior_file("/hgsccl/codified/codexExport/","*.tsv")
 Archive_prior_file("/hgsccl/SangerSubmission_allfiles/","Sanger_Sequencing*.*")
+
 
 
 DB_done_list=Read_FC_database()
 NewFC_list=Get_New_FC()
 NewFC_list.sort()
-AllFilelist = [RunCodexCMD()]
-NewVIPlist = Get_VIP()
+#NewFC_list=["161110_D00341_0503_AH3N3TBCXY"]
+#NewFC_list=["170127_D00341_0514_AHFG37BCXY"]
+#NewFC_list=["170301_D00222_0498_BHG72GBCXY"]
+#NewFC_list=["170301_D00222_0498_BHG72GBCXY"]
 
-   
+#NewFC_list=["170615_D00222_0510_BHLHLVBCXY","170818_D00222_0516_AHMYKVBCXY"]
+#NewFC_list = ['170303_D00341_0520_AHG5HFBCXY'] 
+
 for FC in NewFC_list:
     #logging.info(FC)
-    BAR = FC[20:]
     if FC in Exceptionlist:
         continue
     # Handel error here if no results directory
@@ -439,13 +412,9 @@ for FC in NewFC_list:
         BatchID, Lablist = Read_FCDef_Get_Lab(FC)
     except TypeError:
         continue
-    #NewFilelist = Get_new_codex_files(FC, BatchID, Lablist) 
-    Get_new_codex_files(FC, BatchID, Lablist)
-
-    #NewVIPlist = Get_new_vip_files(BatchID, Lablist, BAR)
-    
-    SampleVariantlist = Get_sample_need_sanger(FC, BatchID, AllFilelist)
-    Get_Neptune_vcf(FC,SampleVariantlist, NewVIPlist)
+    NewFilelist = Get_new_codex_files(FC, BatchID, Lablist)
+    SampleVariantlist = Get_sample_need_sanger(FC, BatchID, NewFilelist)
+    Get_Neptune_vcf(FC,SampleVariantlist)
 
 if len(FC_Need_Logging) == 0:
     logging.info("")
@@ -473,9 +442,10 @@ def Move_VCF():
     for i in Allfiles:
         if i.endswith("vcf"):
             shutil.copy2(i, Target_Dir)
-    
+
 Remove_Empty_VCF()
 Move_VCF()
+
 
 #SampleVariantlist=Get_sample_need_sanger("170330_D00222_0504_AHG3W3BCXY","IR038",["/hgsccl/codified/codexExport/IR038-Columbia.2017-06-22.tsv","/hgsccl/codified/codexExport/IR038-Vanderbilt.2017-06-22.tsv","/hgsccl/codified/codexExport/IR038-CHOP.2017-06-22.tsv"])
 #Get_Neptune_vcf("170330_D00222_0504_AHG3W3BCXY",SampleVariantlist)
